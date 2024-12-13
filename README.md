@@ -31,11 +31,6 @@ The **Home Temperature Monitor** addresses these challenges by:
 - **Compact Design**: Multi-board architecture ensures efficient data flow and space-saving implementation.
 
 
-## Contributing
-
-Contributions are welcome! If you'd like to suggest improvements or add new features, feel free to open an issue or submit a pull request.
-
-
 ## License
 
 This project is licensed under the MIT License. See the `LICENSE` file for details.
