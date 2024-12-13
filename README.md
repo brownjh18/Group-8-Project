@@ -38,4 +38,4 @@ This project is licensed under the MIT License. See the `LICENSE` file for detai
 
 ## Contact
 
-For any inquiries or support, please contact the project maintainer at [brownjh18@gmail.com]
+For any inquiries or support, please contact the project maintainer at brownjh18@gmail.com
