@@ -1,49 +1,93 @@
-#include <Wire.h>
+// Define EEPROM addresses
+#define TEMP_ADDRESS 0 // EEPROM address for temperature
+#define HUM_ADDRESS 50 // EEPROM address for humidity
 
-const int buttonPin = 4;
-volatile int pressCount = 0;
-int oldValue = HIGH; // default/idle value for pin 4 is high.
+// I2C Slave Address
+#define I2C_ADDRESS 3
 
-void setup() 
-{
-  Serial.begin(115200);
-  Wire.begin(3);
-  Wire.onRequest(sendButtonCount);
-  Serial.println("Press count");
+// Function prototypes
+void initI2C();              // Initialize I2C in Slave Mode
+void receiveI2CData();       // Handle I2C data reception
+void writeEEPROM(uint16_t address, uint8_t data); // Write data to EEPROM
+uint8_t readEEPROM(uint16_t address);            // Read data from EEPROM
 
-  // Initialize the pin for reading the button.
-  pinMode(buttonPin, INPUT_PULLUP);
-}
+volatile uint8_t receivedData[8]; // Buffer for received I²C data
 
-void loop() 
-{
-  // Read the value of pin 4.
-  int newValue = digitalRead(buttonPin);
+int main(void) {
+  // Initialize I2C
+  initI2C();
 
-  // Check if the value was changed,
-  // by comparing it with the previous value.
-  if(newValue != oldValue)
-  {
-    if(newValue == LOW)
-    {
-      Serial.println(pressCount);
-      
-      pressCount++;
-      if (pressCount>3){
-        pressCount = 0;
-      }
-    }
-    // Remember the value for the next time.
-    oldValue = newValue;
+  // Main loop
+  while (1) {
+    // Continuously waiting for data through I²C (handled by interrupts)
   }
 
-  // Slow down the sketch.
-  // Also for debouncing the button.
-  delay(100);
+  return 0;
 }
 
-void sendButtonCount(){
-  Wire.write(pressCount);
-  Serial.println("Request Made");
-  Serial.println(pressCount);
+// Initialize I2C in Slave Mode
+void initI2C() {
+  // Set the slave address for Slave 4
+  TWAR = (I2C_ADDRESS << 1); // TWI Address Register (shifted left by 1)
+
+  // Enable TWI, ACK, and Interrupts
+  TWCR = (1 << TWEN) | (1 << TWEA) | (1 << TWIE) | (1 << TWINT);
+
+  // Enable global interrupts
+  sei();
+}
+
+// Handle I2C data reception
+ISR(TWI_vect) {
+  static uint8_t byteCount = 0;
+
+  // Check TWI status code for received data
+  if ((TWSR & 0xF8) == 0x60 || (TWSR & 0xF8) == 0x68) {
+    // Own SLA+W received, ACK returned
+    byteCount = 0;
+    TWCR = (1 << TWEN) | (1 << TWEA) | (1 << TWINT); // Prepare for next byte
+  } else if ((TWSR & 0xF8) == 0x80) {
+    // Data byte has been received
+    if (byteCount < sizeof(receivedData)) {
+      receivedData[byteCount++] = TWDR; // Read received byte
+    }
+    TWCR = (1 << TWEN) | (1 << TWEA) | (1 << TWINT); // Prepare for next byte
+  } else if ((TWSR & 0xF8) == 0xA0) {
+    // Stop or repeated start condition received
+    if (byteCount == 8) {
+      // Process received data
+      uint8_t temperature = receivedData[0]; // First byte is temperature
+      uint8_t humidity = receivedData[4];    // Fifth byte is humidity
+
+      // Store data in EEPROM
+      writeEEPROM(TEMP_ADDRESS, temperature);
+      writeEEPROM(HUM_ADDRESS, humidity);
+    }
+    byteCount = 0; // Reset byte count
+    TWCR = (1 << TWEN) | (1 << TWEA) | (1 << TWINT); // Acknowledge reception
+  } else {
+    // Handle other cases
+    TWCR = (1 << TWEN) | (1 << TWEA) | (1 << TWINT); // Clear TWI interrupt
+  }
+}
+
+// Write a byte to EEPROM
+void writeEEPROM(uint16_t address, uint8_t data) {
+  // Wait for completion of previous write
+  while (EECR & (1 << EEPE));
+
+  EEAR = address; // Set EEPROM address
+  EEDR = data;    // Set EEPROM data register
+  EECR = (1 << EEMPE); // Enable Master Write
+  EECR |= (1 << EEPE); // Start EEPROM write
+}
+
+// Read a byte from EEPROM
+uint8_t readEEPROM(uint16_t address) {
+  // Wait for completion of previous write
+  while (EECR & (1 << EEPE));
+
+  EEAR = address; // Set EEPROM address
+  EECR |= (1 << EERE); // Start EEPROM read
+  return EEDR;         // Return data from EEPROM Data Register
 }
