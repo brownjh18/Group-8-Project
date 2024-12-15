@@ -1,72 +1,144 @@
-#include <Wire.h>
-#include <LiquidCrystal_I2C.h>
+// Define LCD control pins
+#define RS PB0  // Register Select pin on PORTB
+#define EN PB1  // Enable pin on PORTB
+#define D4 PB2  // Data pin 4 on PORTB
+#define D5 PB3  // Data pin 5 on PORTB
+#define D6 PB4  // Data pin 6 on PORTB
+#define D7 PB5  // Data pin 7 on PORTB
 
-LiquidCrystal_I2C lcd(0x27, 16, 2); // LCD at I2C address 0x27
+// I2C Slave Address
+#define I2C_ADDRESS 1
 
-float temperature = 0;
-float humidity = 0;
-int mode = 0; // 0: Temp, 1: Hum, 2: Comfort Index
+// Function Prototypes
+void initLCD();                    // Initialize the LCD
+void lcdCommand(uint8_t cmd);      // Send command to LCD
+void lcdData(uint8_t data);        // Send data to LCD
+void lcdPrint(const char* str);    // Print string to LCD
+void lcdClear();                   // Clear LCD display
+void initI2C();                    // Initialize I2C in Slave Mode
+void receiveI2CData();             // Handle I2C data reception
 
-void setup() {
-  Serial.begin(9600);  // Debugging
-  Wire.begin();        // Initialize I2C as master
-  lcd.begin(16, 2);    // Initialize LCD
-  lcd.backlight();     // Turn on the LCD backlight
+volatile uint8_t temperature = 0; // Store temperature data
+volatile uint8_t humidity = 0;    // Store humidity data
 
-  Serial.println("Board 2: Initialized");
-}
+int main(void) {
+  // Initialize LCD and I2C
+  initLCD();
+  initI2C();
 
-void loop() {
-  // Request mode from Board 3 (Slave at address 3)
-  Wire.requestFrom(3, 1); // Request 1 byte from Board 3
-  if (Wire.available()) {
-    Serial.println("Reading..");
-    mode = Wire.read(); // Read the mode value
-    Serial.println("Mode received from Board 3: " + String(mode)); // Debugging
-    
-  }else{
-    Serial.println("N/A");
-    }
+  // Display initialization message
+  lcdClear();
+  lcdPrint("Slave1 Initialized");
 
-  // Request data from Board 1 (Slave at address 8)
-  Wire.requestFrom(8, 8); // Request 8 bytes from Slave at address 8
-  if (Wire.available() == 8) { // Ensure we receive the full data
-    uint8_t data[8];
-    for (int i = 0; i < 8; i++) {
-      data[i] = Wire.read();
-    }
+  // Main loop
+  while (1) {
+    // Update LCD display with the latest temperature and humidity
+    lcdClear();
+    lcdPrint("Temp: ");
+    lcdData((temperature / 10) + '0'); // Display tens digit
+    lcdData((temperature % 10) + '0'); // Display units digit
+    lcdPrint(" C");
+    lcdPrint(" Hum: ");
+    lcdData((humidity / 10) + '0'); // Display tens digit
+    lcdData((humidity % 10) + '0'); // Display units digit
+    lcdPrint(" %");
 
-    // Unpack the data into temperature and humidity
-    memcpy(&temperature, data, 4); // Extract 4 bytes for temperature
-    memcpy(&humidity, data + 4, 4); // Extract 4 bytes for humidity
-
-    // Debugging: Log received data
-    Serial.print("Received Temp: ");
-    Serial.print(temperature);
-    Serial.print(" C, Hum: ");
-    Serial.print(humidity);
-    Serial.println(" %");
+    // Small delay before the next update
+    _delay_ms(1000);
   }
 
-  // Display data based on mode
-  lcd.clear();
-  if (mode == 0) {
-    lcd.setCursor(0, 0);
-    lcd.print("Temp: " + String(temperature, 1) + "C");
-  } else if (mode == 1) {
-    lcd.setCursor(0, 0);
-    lcd.print("Hum: " + String(humidity, 1) + "%");
-  } else if (mode == 2) {
-    float comfortIndex = calculateComfortIndex(temperature, humidity);
-    lcd.setCursor(0, 0);
-    lcd.print("Comfort Index:");
-    lcd.setCursor(0, 1);
-    lcd.print(String(comfortIndex, 1));
-  }
-
-  delay(1000); // Update every second
+  return 0;
 }
 
-float calculateComfortIndex(float temp, float hum) {
-  return temp - ((100 - hum) / 5); // Simplified formula
+// Initialize the LCD
+void initLCD() {
+  // Set LCD pins as output
+  DDRB |= (1 << RS) | (1 << EN) | (1 << D4) | (1 << D5) | (1 << D6) | (1 << D7);
+
+  // LCD initialization sequence
+  _delay_ms(20);              // Wait for LCD to power up
+  lcdCommand(0x03);           // Set 8-bit mode
+  _delay_ms(5);
+  lcdCommand(0x03);           // Repeat
+  _delay_us(100);
+  lcdCommand(0x03);           // Repeat
+  lcdCommand(0x02);           // Set 4-bit mode
+  lcdCommand(0x28);           // 2-line, 5x7 matrix
+  lcdCommand(0x0C);           // Display ON, Cursor OFF
+  lcdCommand(0x06);           // Entry mode, auto-increment
+  lcdCommand(0x01);           // Clear display
+}
+
+// Send command to LCD
+void lcdCommand(uint8_t cmd) {
+  PORTB &= ~(1 << RS);         // RS = 0 for command
+  PORTB = (PORTB & 0x0F) | (cmd & 0xF0); // Send higher nibble
+  PORTB |= (1 << EN);
+  _delay_us(1);
+  PORTB &= ~(1 << EN);
+  _delay_us(200);
+
+  PORTB = (PORTB & 0x0F) | ((cmd << 4) & 0xF0); // Send lower nibble
+  PORTB |= (1 << EN);
+  _delay_us(1);
+  PORTB &= ~(1 << EN);
+  _delay_ms(2);
+}
+
+// Send data to LCD
+void lcdData(uint8_t data) {
+  PORTB |= (1 << RS);          // RS = 1 for data
+  PORTB = (PORTB & 0x0F) | (data & 0xF0); // Send higher nibble
+  PORTB |= (1 << EN);
+  _delay_us(1);
+  PORTB &= ~(1 << EN);
+  _delay_us(200);
+
+  PORTB = (PORTB & 0x0F) | ((data << 4) & 0xF0); // Send lower nibble
+  PORTB |= (1 << EN);
+  _delay_us(1);
+  PORTB &= ~(1 << EN);
+  _delay_ms(2);
+}
+
+// Print string to LCD
+void lcdPrint(const char* str) {
+  while (*str) {
+    lcdData(*str++);
+  }
+}
+
+// Clear LCD display
+void lcdClear() {
+  lcdCommand(0x01); // Clear display command
+  _delay_ms(2);
+}
+
+// Initialize I2C in Slave Mode
+void initI2C() {
+  // Set the slave address
+  TWAR = (I2C_ADDRESS << 1); // TWI (Two-Wire Interface) Address Register
+
+  // Enable TWI and ACK
+  TWCR = (1 << TWEN) | (1 << TWEA) | (1 << TWINT);
+
+  // Wait for data reception
+  while (1) {
+    // Wait for data reception to complete
+    if (TWCR & (1 << TWINT)) {
+      receiveI2CData();
+    }
+  }
+}
+
+// Handle I2C data reception
+void receiveI2CData() {
+  // Receive temperature
+  temperature = TWDR; // Read temperature from TWI Data Register
+  TWCR = (1 << TWEN) | (1 << TWEA) | (1 << TWINT); // Clear interrupt flag
+  while (!(TWCR & (1 << TWINT))); // Wait for next byte
+
+  // Receive humidity
+  humidity = TWDR; // Read humidity from TWI Data Register
+  TWCR = (1 << TWEN) | (1 << TWEA) | (1 << TWINT); // Clear interrupt flag
 }
