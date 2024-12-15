@@ -1,10 +1,10 @@
 // Define LCD control pins
-#define RS PB0  // Register Select pin on PORTB
-#define EN PB1  // Enable pin on PORTB
-#define D4 PB2  // Data pin 4 on PORTB
-#define D5 PB3  // Data pin 5 on PORTB
-#define D6 PB4  // Data pin 6 on PORTB
-#define D7 PB5  // Data pin 7 on PORTB
+#define RS 0  // Register Select pin on PORTB, PB0
+#define EN 1  // Enable pin on PORTB, PB1
+#define D4 2  // Data pin 4 on PORTB, PB2
+#define D5 3  // Data pin 5 on PORTB, PB3
+#define D6 4  // Data pin 6 on PORTB, PB4
+#define D7 5  // Data pin 7 on PORTB, PB5
 
 // I2C Slave Address
 #define I2C_ADDRESS 1
@@ -17,6 +17,7 @@ void lcdPrint(const char* str);    // Print string to LCD
 void lcdClear();                   // Clear LCD display
 void initI2C();                    // Initialize I2C in Slave Mode
 void receiveI2CData();             // Handle I2C data reception
+void delayMs(uint16_t ms);         // Custom millisecond delay function
 
 volatile uint8_t temperature = 0; // Store temperature data
 volatile uint8_t humidity = 0;    // Store humidity data
@@ -44,7 +45,7 @@ int main(void) {
     lcdPrint(" %");
 
     // Small delay before the next update
-    _delay_ms(1000);
+    delayMs(1000);
   }
 
   return 0;
@@ -53,52 +54,58 @@ int main(void) {
 // Initialize the LCD
 void initLCD() {
   // Set LCD pins as output
-  DDRB |= (1 << RS) | (1 << EN) | (1 << D4) | (1 << D5) | (1 << D6) | (1 << D7);
+  *(volatile uint8_t *)0x24 |= (1 << RS) | (1 << EN) | (1 << D4) | (1 << D5) | (1 << D6) | (1 << D7); // DDRB
 
   // LCD initialization sequence
-  _delay_ms(20);              // Wait for LCD to power up
-  lcdCommand(0x03);           // Set 8-bit mode
-  _delay_ms(5);
-  lcdCommand(0x03);           // Repeat
-  _delay_us(100);
-  lcdCommand(0x03);           // Repeat
-  lcdCommand(0x02);           // Set 4-bit mode
-  lcdCommand(0x28);           // 2-line, 5x7 matrix
-  lcdCommand(0x0C);           // Display ON, Cursor OFF
-  lcdCommand(0x06);           // Entry mode, auto-increment
-  lcdCommand(0x01);           // Clear display
+  delayMs(20);              // Wait for LCD to power up
+  lcdCommand(0x03);         // Set 8-bit mode
+  delayMs(5);
+  lcdCommand(0x03);         // Repeat
+  delayMs(1);
+  lcdCommand(0x03);         // Repeat
+  lcdCommand(0x02);         // Set 4-bit mode
+  lcdCommand(0x28);         // 2-line, 5x7 matrix
+  lcdCommand(0x0C);         // Display ON, Cursor OFF
+  lcdCommand(0x06);         // Entry mode, auto-increment
+  lcdCommand(0x01);         // Clear display
 }
 
 // Send command to LCD
 void lcdCommand(uint8_t cmd) {
-  PORTB &= ~(1 << RS);         // RS = 0 for command
-  PORTB = (PORTB & 0x0F) | (cmd & 0xF0); // Send higher nibble
-  PORTB |= (1 << EN);
-  _delay_us(1);
-  PORTB &= ~(1 << EN);
-  _delay_us(200);
+  *(volatile uint8_t *)0x25 &= ~(1 << RS); // PORTB &= ~RS (RS = 0 for command)
 
-  PORTB = (PORTB & 0x0F) | ((cmd << 4) & 0xF0); // Send lower nibble
-  PORTB |= (1 << EN);
-  _delay_us(1);
-  PORTB &= ~(1 << EN);
-  _delay_ms(2);
+  // Send higher nibble
+  *(volatile uint8_t *)0x25 = (*(volatile uint8_t *)0x25 & 0x0F) | (cmd & 0xF0); // Update PORTB
+  *(volatile uint8_t *)0x25 |= (1 << EN); // PORTB |= EN
+  delayMs(1);
+  *(volatile uint8_t *)0x25 &= ~(1 << EN); // PORTB &= ~EN
+
+  // Send lower nibble
+  *(volatile uint8_t *)0x25 = (*(volatile uint8_t *)0x25 & 0x0F) | ((cmd << 4) & 0xF0);
+  *(volatile uint8_t *)0x25 |= (1 << EN); // PORTB |= EN
+  delayMs(1);
+  *(volatile uint8_t *)0x25 &= ~(1 << EN); // PORTB &= ~EN
+
+  delayMs(2);
 }
 
 // Send data to LCD
 void lcdData(uint8_t data) {
-  PORTB |= (1 << RS);          // RS = 1 for data
-  PORTB = (PORTB & 0x0F) | (data & 0xF0); // Send higher nibble
-  PORTB |= (1 << EN);
-  _delay_us(1);
-  PORTB &= ~(1 << EN);
-  _delay_us(200);
+  *(volatile uint8_t *)0x25 |= (1 << RS); // PORTB |= RS (RS = 1 for data)
 
-  PORTB = (PORTB & 0x0F) | ((data << 4) & 0xF0); // Send lower nibble
-  PORTB |= (1 << EN);
-  _delay_us(1);
-  PORTB &= ~(1 << EN);
-  _delay_ms(2);
+  // Send higher nibble
+  *(volatile uint8_t *)0x25 = (*(volatile uint8_t *)0x25 & 0x0F) | (data & 0xF0); // Update PORTB
+  *(volatile uint8_t *)0x25 |= (1 << EN); // PORTB |= EN
+  delayMs(1);
+  *(volatile uint8_t *)0x25 &= ~(1 << EN); // PORTB &= ~EN
+
+  // Send lower nibble
+  *(volatile uint8_t *)0x25 = (*(volatile uint8_t *)0x25 & 0x0F) | ((data << 4) & 0xF0);
+  *(volatile uint8_t *)0x25 |= (1 << EN); // PORTB |= EN
+  delayMs(1);
+  *(volatile uint8_t *)0x25 &= ~(1 << EN); // PORTB &= ~EN
+
+  delayMs(2);
 }
 
 // Print string to LCD
@@ -111,21 +118,30 @@ void lcdPrint(const char* str) {
 // Clear LCD display
 void lcdClear() {
   lcdCommand(0x01); // Clear display command
-  _delay_ms(2);
+  delayMs(2);
+}
+
+// Custom millisecond delay function
+void delayMs(uint16_t ms) {
+  for (uint16_t i = 0; i < ms; i++) {
+    for (uint16_t j = 0; j < 1000; j++) {
+      asm volatile("nop");
+    }
+  }
 }
 
 // Initialize I2C in Slave Mode
 void initI2C() {
   // Set the slave address
-  TWAR = (I2C_ADDRESS << 1); // TWI (Two-Wire Interface) Address Register
+  *(volatile uint8_t *)0xB8 = (I2C_ADDRESS << 1); // TWAR (TWI Address Register)
 
   // Enable TWI and ACK
-  TWCR = (1 << TWEN) | (1 << TWEA) | (1 << TWINT);
+  *(volatile uint8_t *)0xBC = (1 << 2) | (1 << 6) | (1 << 7); // TWCR (TWI Control Register)
 
   // Wait for data reception
   while (1) {
     // Wait for data reception to complete
-    if (TWCR & (1 << TWINT)) {
+    if (*(volatile uint8_t *)0xBC & (1 << 7)) { // Check TWINT
       receiveI2CData();
     }
   }
@@ -134,11 +150,11 @@ void initI2C() {
 // Handle I2C data reception
 void receiveI2CData() {
   // Receive temperature
-  temperature = TWDR; // Read temperature from TWI Data Register
-  TWCR = (1 << TWEN) | (1 << TWEA) | (1 << TWINT); // Clear interrupt flag
-  while (!(TWCR & (1 << TWINT))); // Wait for next byte
+  temperature = *(volatile uint8_t *)0xBB; // Read temperature from TWDR (TWI Data Register)
+  *(volatile uint8_t *)0xBC = (1 << 2) | (1 << 6) | (1 << 7); // Clear interrupt flag
+  while (!(*(volatile uint8_t *)0xBC & (1 << 7))); // Wait for next byte
 
   // Receive humidity
-  humidity = TWDR; // Read humidity from TWI Data Register
-  TWCR = (1 << TWEN) | (1 << TWEA) | (1 << TWINT); // Clear interrupt flag
+  humidity = *(volatile uint8_t *)0xBB; // Read humidity from TWDR
+  *(volatile uint8_t *)0xBC = (1 << 2) | (1 << 6) | (1 << 7); // Clear interrupt flag
 }
